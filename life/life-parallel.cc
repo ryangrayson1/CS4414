@@ -17,6 +17,7 @@ struct Args {
     LifeBoard *state2;
     Section section;
     int steps;
+    int width;
     pthread_barrier_t *barrier;
 };
 
@@ -35,7 +36,7 @@ vector<Section> divide_board(int threads, int width, int height) {
     int section_size = ceil((float)cells / (float)threads);
     for (int cell = 0; cell < cells; cell += section_size) {
         sections.push_back(make_section(cell, min(cell + section_size, cells) - 1, width));
-        cout << "SECTION " << cell << ": "<< sections[sections.size() - 1].start_row << ", " << sections[sections.size() - 1].start_col << " | " << sections[sections.size() - 1].end_row << ", " << sections[sections.size() - 1].end_col << endl;; 
+        // cout << "SECTION " << cell << ": "<< sections[sections.size() - 1].start_row << ", " << sections[sections.size() - 1].start_col << " | " << sections[sections.size() - 1].end_row << ", " << sections[sections.size() - 1].end_col << endl;; 
     }
     // cout << "LAST SECTION: " << sections[sections.size() - 1].end_row << ", " << sections[sections.size() - 1].end_col << endl << endl;
     // cout << "WIDTH: " << width << endl;
@@ -43,9 +44,17 @@ vector<Section> divide_board(int threads, int width, int height) {
     return sections;
 }
 
-void next_generation(LifeBoard &cur_state, LifeBoard &next_state, struct Section &section) {
+void next_generation(LifeBoard &cur_state, LifeBoard &next_state, struct Section &section, int width) {
     for (int y = section.start_row; y <= section.end_row; ++y) {
-        for (int x = section.start_col; x <= section.end_col; ++x) {
+        int col_start = 1;
+        int col_end = width-1;
+        if(y == section.start_row){
+            col_start = section.start_col;
+        }
+        if(y == section.end_row){
+            col_end = section.end_col;
+        }
+        for (int x = col_start; x <= col_end; ++x) {
             int live_in_window = 0;
             /* For each cell, examine a 3x3 "window" of cells around it,
                 * and count the number of live (true) cells in the window. */
@@ -70,15 +79,15 @@ void *generate_life(void *args) { //LifeBoard &state1, LifeBoard &state2, Sectio
     struct Args *casted_args = (struct Args *)(args);
     for (int step = 0; step < casted_args->steps; ++step) {
         if (step % 2) {
-            next_generation(*(casted_args->state2), *(casted_args->state1), casted_args->section);
+            next_generation(*(casted_args->state2), *(casted_args->state1), casted_args->section, casted_args->width);
         } else {
-            next_generation(*(casted_args->state1), *(casted_args->state2), casted_args->section);
+            next_generation(*(casted_args->state1), *(casted_args->state2), casted_args->section, casted_args->width);
         }
         // TODO
         // pthread barrier wait here
         pthread_barrier_wait(casted_args->barrier);
     }
-    pthread_exit(NULL);
+    // pthread_exit(NULL);
     return NULL;
 }
 
@@ -98,6 +107,7 @@ void simulate_life_parallel(int threads, LifeBoard &state, int steps) {
         args.section = sections[i];
         args.steps = steps;
         args.barrier = &barrier;
+        args.width = state.width();
         pthread_create(&thread_pool[i], NULL, generate_life, (void*)&args);
     }
     for (int i = 0; i < threads; i++) {
