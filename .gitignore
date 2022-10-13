@@ -1,0 +1,11 @@
+.DS_Store
+.vscode
+**/PARTNERS
+**/*.dSYM
+**/*.o
+**/*.out
+**/*.tar.gz
+shell/test/*
+shell/foo.txt
+
+msh
