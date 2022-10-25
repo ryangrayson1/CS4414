@@ -63,7 +63,7 @@ void ThreadPool::SubmitTask(const std::string &name, Task* task) {
     
     pthread_mutex_lock(&queue_lock);
     task_queue.push(task);
-    pthread_cond_signal(&task_ready);
+    pthread_cond_broadcast(&task_ready);
     pthread_mutex_unlock(&queue_lock);
 }
 
