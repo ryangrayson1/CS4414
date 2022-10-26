@@ -10,12 +10,12 @@ Task::~Task() {
 void ThreadPool::RunThread() {
     while (true) {
         pthread_mutex_lock(&queue_lock);
-        while (task_queue.empty()) {
+        while (task_queue.empty() && !stop) {
             pthread_cond_wait(&task_ready, &queue_lock);
-            if (stop) {
-                pthread_mutex_unlock(&queue_lock);
-                return;
-            }
+        }
+        if (stop) {
+            pthread_mutex_unlock(&queue_lock);
+            return;
         }
         Task *task = task_queue.front();
         task_queue.pop();
@@ -49,6 +49,7 @@ ThreadPool::ThreadPool(int num_threads) {
 }
 
 void ThreadPool::SubmitTask(const std::string &name, Task* task) {
+
     pthread_cond_init(&(task->done_cv), NULL);
     pthread_mutex_init(&(task->done_lock), NULL);
     
