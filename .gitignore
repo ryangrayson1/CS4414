@@ -5,8 +5,6 @@
 **/*.o
 **/*.out
 **/*.a
-**/*.tar.gz
 shell/test/*
 shell/foo.txt
-
 msh
