@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+#include "kalloc.h"
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -440,5 +442,58 @@ sys_pipe(void)
   }
   fd[0] = fd0;
   fd[1] = fd1;
+  return 0;
+}
+
+
+// add a new xv6 system call int getpagetableentry(int pid, int address) 
+// that returns the last-level page table entry for pid at virtual address
+// address, or 0 if there is no such page table entry.
+int
+sys_getpagetableentry(void){
+  int pid;
+  int address;
+
+  if(argint(0, &pid) < 0 || argint(1, &pid) < 0)
+    return -1;
+
+  // convert kernel va to physical address
+  // i think? but this isn't a pte, so idk what its returning here
+  // also need to check if this is a valid physical address
+  if(address >= KERNBASE){
+    return V2P(address);
+  }
+
+  // get process for pid
+  pde_t* pgdir = ('''get process for pid''')->pgdir;
+  pte_t* pte = walkpgdir(pgdir, (const void *)(address), 0);
+  if(pte == 0)
+    return 0;
+
+  return pte;
+}
+
+// Add a new system call int isphysicalpagefree(int ppn) that returns a 
+// true value if physical page number ppn is on the free list managed by
+// kalloc.c and a false value (0) otherwise.
+int
+sys_isphysicalpagefree(void){
+  int ppn;
+
+  if(argint(0, &ppn) < 0)
+    return -1;
+  
+  // idk how this works, the freelist has a struct run, which is just a pointer to another run?
+  // check out kalloc.c
+
+  return 0;
+}
+
+int
+sys_dumppagetable(void){
+  int pid;
+
+  if(argint(0, &ppn) < 0)
+    return -1;
   return 0;
 }
