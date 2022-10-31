@@ -24,16 +24,12 @@ public:
 class ThreadPool {
 public:
 
-    bool stop;
-
     vector<pthread_t> threads;
-    
     queue<Task*> task_queue;
-    pthread_mutex_t queue_lock;
-
     unordered_map<string, Task*> task_map;
-
+    pthread_mutex_t queue_lock;
     pthread_cond_t task_ready;
+    bool stop;
 
     ThreadPool(int num_threads);
 

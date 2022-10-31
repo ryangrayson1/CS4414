@@ -1,0 +1,4 @@
+libpool-tsan.a
+libpool.a
+pool-test
+pool-test-tsan

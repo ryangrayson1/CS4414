@@ -4,8 +4,7 @@
 **/*.dSYM
 **/*.o
 **/*.out
-**/*.tar.gz
+**/*.a
 shell/test/*
 shell/foo.txt
-
 msh
