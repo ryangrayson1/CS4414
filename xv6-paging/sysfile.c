@@ -454,7 +454,7 @@ sys_getpagetableentry(void){
   int pid;
   int address;
 
-  if(argint(0, &pid) < 0 || argint(1, &pid) < 0)
+  if(argint(0, &pid) < 0 || argint(1, &address) < 0)
     return -1;
 
   // convert kernel va to physical address
@@ -465,10 +465,18 @@ sys_getpagetableentry(void){
   }
 
   // get process for pid
-  pde_t* pgdir = ('''get process for pid''')->pgdir;
+  // Not done - how to acess ptable?
+  struct proc *p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      break;
+    }
+  }
+  release(&ptable.lock);
+
+  pde_t* pgdir = p->pgdir;
   pte_t* pte = walkpgdir(pgdir, (const void *)(address), 0);
-  if(pte == 0)
-    return 0;
 
   return pte;
 }
@@ -486,7 +494,22 @@ sys_isphysicalpagefree(void){
   // idk how this works, the freelist has a struct run, which is just a pointer to another run?
   // check out kalloc.c
 
-  return 0;
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+
+  run* node = kmem.freelist;
+  while(node != NULL){
+    if(*((char*)node) == ppn){
+      if(kmem.use_lock)
+        release(&kmem.lock);
+      return true;
+    }
+  }
+  
+  if(kmem.use_lock)
+    release(&kmem.lock);
+
+  return false;
 }
 
 int
