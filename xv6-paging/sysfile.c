@@ -24,7 +24,7 @@ extern struct {
   struct proc proc[NPROC];
 } ptable;
 
-extern struct run {
+struct run {
   struct run *next;
 };
 
@@ -478,7 +478,7 @@ sys_getpagetableentry(void){
   // i think? but this isn't a pte, so idk what its returning here
   // also need to check if this is a valid physical address
   if(address >= KERNBASE){
-    return V2P(address);
+    return V2P((void*)address);
   }
 
   // get process for pid
@@ -498,7 +498,7 @@ sys_getpagetableentry(void){
 
   // be careful of NULL here
 
-  return pte;
+  return *pte;
 }
 
 // Add a new system call int isphysicalpagefree(int ppn) that returns a 
@@ -518,12 +518,13 @@ sys_isphysicalpagefree(void){
     acquire(&kmem.lock);
 
   struct run *node = kmem.freelist;
-  while(node != NULL){
+  while(node){
     if(V2P((char*)node) == ppn){
       if(kmem.use_lock)
         release(&kmem.lock);
       return 1;
     }
+    node = node->next;
   }
   
   if(kmem.use_lock)
@@ -558,9 +559,9 @@ sys_dumppagetable(void){
       cprintf("P %s %s %x\n");
       cprintf(*pte & PTE_U ? "U" : "-");
       cprintf(*pte & PTE_W ? "W" : "-");
-      cprintf(PTE_ADDR(pte) >> PTXSHIFT);
+      cprintf("%x", PTE_ADDR(*pte) >> PTXSHIFT);
     } else {
-        printf(1, "- <not present>\n");
+        cprintf("- <not present>\n");
     }
   }
 
