@@ -497,6 +497,9 @@ sys_getpagetableentry(void){
   pte_t* pte = walkpgdir(pgdir, (const void *)(address), 0);
 
   // be careful of NULL here
+  if(!pte){
+    return 0;
+  }
 
   return *pte;
 }
@@ -518,7 +521,9 @@ sys_isphysicalpagefree(void){
     acquire(&kmem.lock);
 
   struct run *node = kmem.freelist;
+  // cprintf("%d\n", ppn);
   while(node){
+    // cprintf("%d\n", V2P((char*)node));
     if(V2P((char*)node) == ppn){
       if(kmem.use_lock)
         release(&kmem.lock);
@@ -552,16 +557,17 @@ sys_dumppagetable(void){
   cprintf("START PAGE TABLE\n");
 
   int va;
-  for(va = 0; va < p->sz; ++va){
+  // p->sz
+  for(va = 0; va < p->sz; va+=PGSIZE){
     pte_t* pte = walkpgdir(p->pgdir, (const void *)(va), 0);
+    cprintf("%x", (va/PGSIZE)); // VPN
     if (*pte & PTE_P) {
-      cprintf("%x", va); // VPN
-      cprintf("P %s %s %x\n");
-      cprintf(*pte & PTE_U ? "U" : "-");
-      cprintf(*pte & PTE_W ? "W" : "-");
-      cprintf("%x", PTE_ADDR(*pte) >> PTXSHIFT);
+      cprintf(" P");
+      cprintf(" %s", (*pte & PTE_U) ? "U" : "-");
+      cprintf(" %s",(*pte & PTE_W) ? "W" : "-");
+      cprintf(" %x\n", PTE_ADDR(*pte) >> PTXSHIFT);
     } else {
-        cprintf("- <not present>\n");
+        cprintf(" - <not present>\n");
     }
   }
 

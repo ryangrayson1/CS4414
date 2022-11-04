@@ -157,6 +157,7 @@ _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T program.ld --gc-sections -o $@ $^ $(LIBGCC_A)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+	strip $@
 
 _forktest: forktest.o $(ULIB)
 	# forktest has less library code linked in - needs to be small
@@ -175,6 +176,8 @@ mkfs: mkfs.c fs.h param.h
 
 UPROGS=\
 	_ptetool\
+	_pp_test\
+	_pp_suite\
 	_cat\
 	_echo\
 	_forktest\
