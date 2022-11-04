@@ -15,8 +15,26 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
-#include "kalloc.h"
+int NULL = 0;
+
+extern struct {
+  struct spinlock lock;
+  struct proc proc[NPROC];
+} ptable;
+
+extern struct run {
+  struct run *next;
+};
+
+extern struct {
+  struct spinlock lock;
+  int use_lock;
+  struct run *freelist;
+} kmem;
+
+extern pte_t * walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -465,7 +483,8 @@ sys_getpagetableentry(void){
   }
 
   // get process for pid
-  // Not done - how to acess ptable?
+  // check ptable for proc with matching pid
+  // (ptable declared with extern at top)
   struct proc *p;
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -477,6 +496,8 @@ sys_getpagetableentry(void){
 
   pde_t* pgdir = p->pgdir;
   pte_t* pte = walkpgdir(pgdir, (const void *)(address), 0);
+
+  // be careful of NULL here
 
   return pte;
 }
@@ -497,24 +518,25 @@ sys_isphysicalpagefree(void){
   if(kmem.use_lock)
     acquire(&kmem.lock);
 
-  run* node = kmem.freelist;
+  struct run *node = kmem.freelist;
   while(node != NULL){
     if(*((char*)node) == ppn){
       if(kmem.use_lock)
         release(&kmem.lock);
-      return true;
+      return 1;
     }
   }
   
   if(kmem.use_lock)
     release(&kmem.lock);
 
-  return false;
+  return 0;
 }
 
 int
 sys_dumppagetable(void){
   int pid;
+  int ppn;
 
   if(argint(0, &ppn) < 0)
     return -1;
