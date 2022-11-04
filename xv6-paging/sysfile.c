@@ -463,7 +463,6 @@ sys_pipe(void)
   return 0;
 }
 
-
 // add a new xv6 system call int getpagetableentry(int pid, int address) 
 // that returns the last-level page table entry for pid at virtual address
 // address, or 0 if there is no such page table entry.
@@ -520,7 +519,7 @@ sys_isphysicalpagefree(void){
 
   struct run *node = kmem.freelist;
   while(node != NULL){
-    if(*((char*)node) == ppn){
+    if(V2P((char*)node) == ppn){
       if(kmem.use_lock)
         release(&kmem.lock);
       return 1;
@@ -536,9 +535,35 @@ sys_isphysicalpagefree(void){
 int
 sys_dumppagetable(void){
   int pid;
-  int ppn;
 
-  if(argint(0, &ppn) < 0)
+  if(argint(0, &pid) < 0)
     return -1;
+
+  struct proc *p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      break;
+    }
+  }
+  release(&ptable.lock);
+
+  cprintf("START PAGE TABLE\n");
+
+  int va;
+  for(va = 0; va < p->sz; ++va){
+    pte_t* pte = walkpgdir(p->pgdir, (const void *)(va), 0);
+    if (*pte & PTE_P) {
+      cprintf("%x", va); // VPN
+      cprintf("P %s %s %x\n");
+      cprintf(*pte & PTE_U ? "U" : "-");
+      cprintf(*pte & PTE_W ? "W" : "-");
+      cprintf(PTE_ADDR(pte) >> PTXSHIFT);
+    } else {
+        printf(1, "- <not present>\n");
+    }
+  }
+
+  cprintf("END PAGE TABLE\n");
   return 0;
 }
