@@ -478,13 +478,14 @@ sys_getpagetableentry(void){
   if(address >= KERNBASE){
     return V2P((void*)address);
   }
+  // TA: won't ever be in kernel space - this wouldn't make sense
 
   // get process for pid
   // check ptable for proc with matching pid
   // (ptable declared with extern at top)
   struct proc *p;
   acquire(&ptable.lock);
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; ++p){
     if(p->pid == pid){
       break;
     }
@@ -518,7 +519,10 @@ sys_isphysicalpagefree(void){
   // cprintf("%d\n", ppn);
   while(node){
     // cprintf("%d\n", V2P((char*)node));
-    if(V2P((char*)node) == ppn){
+    // extract ppn from pyhs address
+    int pyhs_addr = V2P((char*)node);
+    int cur_ppn = pyhs_addr >> PTXSHIFT;
+    if(cur_ppn == ppn){
       if(kmem.use_lock)
         release(&kmem.lock);
       return 1;
@@ -549,7 +553,7 @@ sys_dumppagetable(void){
 
   cprintf("START PAGE TABLE pid=%d\n", pid);
 
-  // va increments by page size because we only care about the upper 22 bits
+  // va increments by page size because we only care about the upper 20 bits
   int va;
   for(va = 0; va < p->sz; va += PGSIZE){
     pte_t* pte = walkpgdir(p->pgdir, (const void *)(va), 0);
