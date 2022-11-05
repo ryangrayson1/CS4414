@@ -468,14 +468,12 @@ sys_pipe(void)
 // address, or 0 if there is no such page table entry.
 int
 sys_getpagetableentry(void){
-  int pid;
-  int address;
-
+  int pid, address;
   if(argint(0, &pid) < 0 || argint(1, &address) < 0)
     return -1;
 
   // convert kernel va to physical address
-  // i think? but this isn't a pte, so idk what its returning here
+  // but what is V2P returning here?
   // also need to check if this is a valid physical address
   if(address >= KERNBASE){
     return V2P((void*)address);
@@ -510,12 +508,8 @@ sys_getpagetableentry(void){
 int
 sys_isphysicalpagefree(void){
   int ppn;
-
   if(argint(0, &ppn) < 0)
     return -1;
-  
-  // idk how this works, the freelist has a struct run, which is just a pointer to another run?
-  // check out kalloc.c
 
   if(kmem.use_lock)
     acquire(&kmem.lock);
@@ -541,33 +535,32 @@ sys_isphysicalpagefree(void){
 int
 sys_dumppagetable(void){
   int pid;
-
   if(argint(0, &pid) < 0)
     return -1;
 
   struct proc *p;
   acquire(&ptable.lock);
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; ++p){
     if(p->pid == pid){
       break;
     }
   }
   release(&ptable.lock);
 
-  cprintf("START PAGE TABLE\n");
+  cprintf("START PAGE TABLE pid=%d\n", pid);
 
+  // va increments by page size because we only care about the upper 22 bits
   int va;
-  // p->sz
-  for(va = 0; va < p->sz; va+=PGSIZE){
+  for(va = 0; va < p->sz; va += PGSIZE){
     pte_t* pte = walkpgdir(p->pgdir, (const void *)(va), 0);
-    cprintf("%x", (va/PGSIZE)); // VPN
+    cprintf("%x", (va / PGSIZE)); // VPN
     if (*pte & PTE_P) {
       cprintf(" P");
       cprintf(" %s", (*pte & PTE_U) ? "U" : "-");
       cprintf(" %s",(*pte & PTE_W) ? "W" : "-");
       cprintf(" %x\n", PTE_ADDR(*pte) >> PTXSHIFT);
     } else {
-        cprintf(" - <not present>\n");
+      cprintf(" - <not present>\n");
     }
   }
 
