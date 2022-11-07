@@ -77,9 +77,59 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
+  
+  case T_PGFLT:
+    {
+      // check if 0 <= fault_va < proc->sz manually
+   
+    // walkpgdir + no alloc (parameter = 0)
+    // you get back pte
+    // first, check flag on pte to make sure its not guard page --> if guard page, kill process (stack overflow)
+
+    // kalloc, and assign page
+    // then walkpage dir with alloc
+    // (basically old allocuvm)
+    // 
+
+    // be careful of VA vs PA here
+    uint fault_va = rcr2();
+    uint rounded_fault_va = PGROUNDUP(fault_va);
+
+    // make sure it is in bounds for process (0 <= fault_va < proc->sz) and not in the guard page
+    pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(rounded_fault_va), 0);
+    // & with user accessible bit
+    // present flag PTE_P
+
+    if(*pte & PTE_P && !(*pte & PTE_U)){
+      cprintf("heap allocation failed - address out of bounds\n");
+      goto kill_proc;
+      return;
+    }
+    // obtain a free page
+    char *mem = kalloc();
+    if(mem == 0){
+      cprintf("heap allocation failed - out of memory\n");
+      goto kill_proc;
+      return;
+    }
+
+    // zero out the page
+    memset(mem, 0, PGSIZE);
+
+    // update page table
+    if(mappages(myproc()->pgdir, (char*)rounded_fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
+      cprintf("heap allocation failed - out of memory\n");
+      kfree(mem);
+      goto kill_proc;
+      return;
+    }
+
+    // flush tlb ?
+    }
 
   //PAGEBREAK: 13
   default:
+  kill_proc:
     if(myproc() == 0 || (tf->cs&3) == 0){
       // In kernel, it must be our mistake.
       cprintf("unexpected trap %d from cpu %d eip %x (cr2=0x%x)\n",
