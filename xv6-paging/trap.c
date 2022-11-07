@@ -97,10 +97,9 @@ trap(struct trapframe *tf)
 
     // make sure it is in bounds for process (0 <= fault_va < proc->sz) and not in the guard page
     pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(rounded_fault_va), 0);
-    // & with user accessible bit
-    // present flag PTE_P
 
-    if(*pte & PTE_P && !(*pte & PTE_U)){
+    // present flag PTE_P, user accessible PTE_U
+    if((*pte & PTE_P) && !(*pte & PTE_U)){
       cprintf("heap allocation failed - address out of bounds\n");
       goto kill_proc;
       return;
@@ -112,7 +111,7 @@ trap(struct trapframe *tf)
       goto kill_proc;
       return;
     }
-
+    
     // zero out the page
     memset(mem, 0, PGSIZE);
 
