@@ -8,6 +8,8 @@
 #include "traps.h"
 #include "spinlock.h"
 
+extern pte_t * walkpgdir(pde_t *pgdir, const void *va, int alloc);
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -93,10 +95,10 @@ trap(struct trapframe *tf)
 
     // be careful of VA vs PA here
     uint fault_va = rcr2();
-    uint rounded_fault_va = PGROUNDUP(fault_va);
+    // uint fault_va = PGROUNDUP(rcr2());
 
     // make sure it is in bounds for process (0 <= fault_va < proc->sz) and not in the guard page
-    pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(rounded_fault_va), 0);
+    pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(fault_va), 0);
 
     // present flag PTE_P, user accessible PTE_U
     if((*pte & PTE_P) && !(*pte & PTE_U)){
@@ -104,26 +106,34 @@ trap(struct trapframe *tf)
       goto kill_proc;
       return;
     }
+
+    // need more checks here to make sure the address is valid i think
+
+    // can just use walkpgdir to do the below instead?
+    walkpgdir(myproc()->pgdir, (const void *)(fault_va), 1);
+
+    // flush tlb
+    switchuvm(myproc());
+
     // obtain a free page
-    char *mem = kalloc();
-    if(mem == 0){
-      cprintf("heap allocation failed - out of memory\n");
-      goto kill_proc;
-      return;
-    }
+    // char *mem = kalloc();
+    // if(mem == 0){
+    //   cprintf("heap allocation failed - out of memory\n");
+    //   goto kill_proc;
+    //   return;
+    // }
     
     // zero out the page
-    memset(mem, 0, PGSIZE);
+    // memset(mem, 0, PGSIZE);
 
     // update page table
-    if(mappages(myproc()->pgdir, (char*)rounded_fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-      cprintf("heap allocation failed - out of memory\n");
-      kfree(mem);
-      goto kill_proc;
-      return;
-    }
+    // if(mappages(myproc()->pgdir, (char*)fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
+    //   cprintf("heap allocation failed - out of memory\n");
+    //   kfree(mem);
+    //   goto kill_proc;
+    //   return;
+    // }
 
-    // flush tlb ?
     }
 
   //PAGEBREAK: 13
