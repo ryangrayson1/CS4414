@@ -85,23 +85,30 @@ trap(struct trapframe *tf)
   case T_PGFLT:
     {
     
-    uint fault_va = rcr2();
+    uint fault_va = PGROUNDDOWN(rcr2());
+
+    // additional bounds checking?  0 <= fault_va < proc->sz
+    // if pg num > pg number at size -> kill
+    int vpn = fault_va >> PTXSHIFT;
+    if(vpn >= myproc()->sz >> PTXSHIFT){
+      cprintf("vpn access out of bounds (1)\n");
+      goto kill_proc;
+    }
 
     // get the pte pointer for this address
     pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(fault_va), 0);
 
     // if pte indicates that it is present but not user accessible, it is guard page
-    if(pte == 0 || ((*pte & PTE_P) && !(*pte & PTE_U))){
-      cprintf("heap allocation failed - address out of bounds\n");
+    if(pte != 0 && ((*pte & PTE_P) && !(*pte & PTE_U))){
+      cprintf((pte == 0 ? "NULL PTE" : "GUARD PAGE"));
+      cprintf("heap allocation failed - address out of bounds (2)\n");
       goto kill_proc;
     }
-
-    // additional bounds checking?  0 <= fault_va < proc->sz
 
     // obtain a free page
     char *mem = kalloc();
     if (mem == 0) {
-      cprintf("heap allocation failed - out of memory\n");
+      cprintf("heap allocation failed - out of memory (3)\n");
       goto kill_proc;
     }
 
@@ -110,16 +117,17 @@ trap(struct trapframe *tf)
 
     // update page table
     if(mappages(myproc()->pgdir, (char*)fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-      cprintf("heap allocation failed - out of memory (2)\n");
-      // kfree(mem);
+      cprintf("heap allocation failed - out of memory (4)\n");
+      kfree(mem);
       goto kill_proc;
     }
-    
+
     // flush tlb
     switchuvm(myproc());
 
-    }
     break;
+    }
+    
 
   //PAGEBREAK: 13
   default:
