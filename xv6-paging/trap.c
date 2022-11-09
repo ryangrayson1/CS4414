@@ -10,6 +10,8 @@
 
 extern pte_t * walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
+extern int mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm);
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -82,59 +84,42 @@ trap(struct trapframe *tf)
   
   case T_PGFLT:
     {
-      // check if 0 <= fault_va < proc->sz manually
-   
-    // walkpgdir + no alloc (parameter = 0)
-    // you get back pte
-    // first, check flag on pte to make sure its not guard page --> if guard page, kill process (stack overflow)
-
-    // kalloc, and assign page
-    // then walkpage dir with alloc
-    // (basically old allocuvm)
-    // 
-
-    // be careful of VA vs PA here
+    
     uint fault_va = rcr2();
-    // uint fault_va = PGROUNDUP(rcr2());
 
-    // make sure it is in bounds for process (0 <= fault_va < proc->sz) and not in the guard page
+    // get the pte pointer for this address
     pte_t *pte = walkpgdir(myproc()->pgdir, (const void *)(fault_va), 0);
 
-    // present flag PTE_P, user accessible PTE_U
-    if((*pte & PTE_P) && !(*pte & PTE_U)){
+    // if pte indicates that it is present but not user accessible, it is guard page
+    if(pte == 0 || ((*pte & PTE_P) && !(*pte & PTE_U))){
       cprintf("heap allocation failed - address out of bounds\n");
       goto kill_proc;
-      return;
     }
 
-    // need more checks here to make sure the address is valid i think
+    // additional bounds checking?  0 <= fault_va < proc->sz
 
-    // can just use walkpgdir to do the below instead?
-    walkpgdir(myproc()->pgdir, (const void *)(fault_va), 1);
+    // obtain a free page
+    char *mem = kalloc();
+    if (mem == 0) {
+      cprintf("heap allocation failed - out of memory\n");
+      goto kill_proc;
+    }
 
+    // zero out the page
+    memset(mem, 0, PGSIZE);
+
+    // update page table
+    if(mappages(myproc()->pgdir, (char*)fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
+      cprintf("heap allocation failed - out of memory (2)\n");
+      // kfree(mem);
+      goto kill_proc;
+    }
+    
     // flush tlb
     switchuvm(myproc());
 
-    // obtain a free page
-    // char *mem = kalloc();
-    // if(mem == 0){
-    //   cprintf("heap allocation failed - out of memory\n");
-    //   goto kill_proc;
-    //   return;
-    // }
-    
-    // zero out the page
-    // memset(mem, 0, PGSIZE);
-
-    // update page table
-    // if(mappages(myproc()->pgdir, (char*)fault_va, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-    //   cprintf("heap allocation failed - out of memory\n");
-    //   kfree(mem);
-    //   goto kill_proc;
-    //   return;
-    // }
-
     }
+    break;
 
   //PAGEBREAK: 13
   default:
