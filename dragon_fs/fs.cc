@@ -7,31 +7,43 @@
 #include "inode.h"
 using namespace std;
 
-int next_block = 0;
-int blocks_in_use = 0;
+int next_inode_block = 0;
+int inode_blocks_in_use = 0;
+int next_data_block = 0;
+int data_blocks_in_use = 0;
 
-int get_free_block(char *bitmap, int TOTAL_BLOCKS)
+int get_free_inode_block(char *bitmap, int INODE_BLOCKS)
 {
-  if (blocks_in_use == TOTAL_BLOCKS) {
+  if (inode_blocks_in_use == INODE_BLOCKS) {
     return -1;
   }
-  while (bitmap[next_block]) {
-    if (next_block = TOTAL_BLOCKS - 1) {
-      next_block = 0;
+  while (bitmap[next_inode_block]) {
+    if (next_inode_block == INODE_BLOCKS - 1) {
+      next_inode_block = 0;
     } else {
-      ++next_block;
+      ++next_inode_block;
     }
   }
-  bitmap[next_block] = 1;
-  ++blocks_in_use;
-  return next_block;
-  for (int i = 0; i < TOTAL_BLOCKS; ++i) {
-    if (!bitmap[i]) {
-      bitmap[i] = 1;
-      return i;
+  bitmap[next_inode_block] = 1;
+  ++inode_blocks_in_use;
+  return next_inode_block++;
+}
+
+int get_free_data_block(char *bitmap, int TOTAL_BLOCKS, int INODE_BLOCKS)
+{
+  if (data_blocks_in_use == TOTAL_BLOCKS - INODE_BLOCKS) {
+    return -1;
+  }
+  while (bitmap[INODE_BLOCKS + next_data_block]) {
+    if (INODE_BLOCKS + next_data_block == TOTAL_BLOCKS - 1) {
+      next_data_block = 0;
+    } else {
+      ++next_data_block;
     }
   }
-  return -1;
+  bitmap[next_data_block + INODE_BLOCKS] = 1;
+  ++data_blocks_in_use;
+  return INODE_BLOCKS + next_data_block++;
 }
 
 void write_char(char *rawdata, int &pos, char val)
@@ -49,11 +61,11 @@ void write_int(char *rawdata, int &pos, int val)
 }
 
 // true if done, false if we need to keep writing more of the file
-bool write_iblock(char *rawdata, char *bitmap, int N, FILE *fptr, char *buf, int &nbytes, int iblockno) {
+bool write_iblock(char *rawdata, char *bitmap, int N, int M, FILE *fptr, char *buf, int &nbytes, int iblockno) {
   int iblock_pos = iblockno * BLOCK_SZ;
   int iblock_end = iblock_pos + BLOCK_SZ;
   while (iblock_pos < iblock_end) {
-    int dblockno = get_free_block(bitmap, N);
+    int dblockno = get_free_data_block(bitmap, N, M);
     write_int(rawdata, iblock_pos, dblockno);
 
     int data_pos = dblockno * BLOCK_SZ;
@@ -73,7 +85,6 @@ bool write_iblock(char *rawdata, char *bitmap, int N, FILE *fptr, char *buf, int
 void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid, int N, int M, int D, int I)
 {
   int i, nbytes = 0;
-  int i2block_index, i3block_index;
   struct inode *ip;
   FILE *fptr;
   char buf[BLOCK_SZ];
@@ -85,6 +96,7 @@ void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid,
     bitmap[D] = 1;
   }
 
+  ip = (struct inode *)malloc(sizeof(struct inode));
   int inode_pos = D * BLOCK_SZ + I;
 
   ip->mode = 0;
@@ -111,7 +123,7 @@ void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid,
   // DBLOCKS
   int bytes, data_pos, dblockno, b;
   for (i = 0; i < N_DBLOCKS; i++) {
-    dblockno = get_free_block(bitmap, N);
+    dblockno = get_free_data_block(bitmap, N, M);
     ip->dblocks[i] = dblockno;
     write_int(rawdata, inode_pos, dblockno);
 
@@ -130,10 +142,10 @@ void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid,
   // IBLOCKS
   int iblockno;
   for (i = 0; i < N_IBLOCKS; ++i) {
-    iblockno = get_free_block(bitmap, N);
+    iblockno = get_free_inode_block(bitmap, N);
     ip->iblocks[i] = iblockno;
     write_int(rawdata, inode_pos, iblockno);
-    if (write_iblock(rawdata, bitmap, N, fptr, buf, nbytes, iblockno)) {
+    if (write_iblock(rawdata, bitmap, N, M, fptr, buf, nbytes, iblockno)) {
       ip->size = nbytes;  // total number of data bytes written for file
       printf("successfully wrote %d bytes of file %s\n", nbytes, file);
       return;
@@ -143,15 +155,15 @@ void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid,
   // if so, you will first need to get an empty block to use for your IBLOCK
 
   // I2BLOCK
-  int i2blockno = get_free_block(bitmap, N);
+  int i2blockno = get_free_inode_block(bitmap, N);
   ip->i2block = i2blockno;
   write_int(rawdata, inode_pos, i2blockno);
   int i2block_pos = i2blockno * BLOCK_SZ;
   int i2block_end = i2block_pos + BLOCK_SZ;
   while (i2block_pos < i2block_end) {
-    iblockno = get_free_block(bitmap, N);
+    iblockno = get_free_inode_block(bitmap, N);
     write_int(rawdata, i2block_pos, iblockno);
-    if (write_iblock(rawdata, bitmap, N, fptr, buf, nbytes, iblockno)) {
+    if (write_iblock(rawdata, bitmap, N, M, fptr, buf, nbytes, iblockno)) {
       ip->size = nbytes;  // total number of data bytes written for file
       printf("successfully wrote %d bytes of file %s\n", nbytes, file);
       return;
@@ -159,20 +171,20 @@ void place_file(char *rawdata, char *bitmap, const char *file, int uid, int gid,
   }
 
   //I3BLOCK
-  int i3blockno = get_free_block(bitmap, N);
+  int i3blockno = get_free_inode_block(bitmap, N);
   ip->i3block = i3blockno;
   write_int(rawdata, inode_pos, i3blockno);
   int i3block_pos = i3blockno * BLOCK_SZ;
   int i3block_end = i3block_pos + BLOCK_SZ;
   while (i3block_pos < i3block_end) {
-    i2blockno = get_free_block(bitmap, N);
+    i2blockno = get_free_inode_block(bitmap, N);
     write_int(rawdata, i3block_pos, i2blockno);
     int i2block_pos = i2blockno * BLOCK_SZ;
     int i2block_end = i2block_pos + BLOCK_SZ;
     while (i2block_pos < i2block_end) {
-      iblockno = get_free_block(bitmap, N);
+      iblockno = get_free_inode_block(bitmap, N);
       write_int(rawdata, i2block_pos, iblockno);
-      if (write_iblock(rawdata, bitmap, N, fptr, buf, nbytes, iblockno)) {
+      if (write_iblock(rawdata, bitmap, N, M, fptr, buf, nbytes, iblockno)) {
         ip->size = nbytes;  // total number of data bytes written for file
         printf("successfully wrote %d bytes of file %s\n", nbytes, file);
         return;
@@ -220,6 +232,9 @@ int main(int argc, char **argv) // add argument handling
     }
     char *rawdata = (char*)malloc(N * BLOCK_SZ * sizeof(char));
     char *bitmap = (char*)malloc(N * sizeof(char));
+    for (int i = 0; i < N; ++i) {
+      bitmap[i] = 0;
+    }
     place_file(rawdata, bitmap, inputfilename, UID, GID, N, M, D, I);
 
     FILE *outfile = fopen(outputfilename, "wb");
