@@ -200,6 +200,22 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   printf("failed to write all of file %s\n", inputfilename);
 }
 
+void set_iblock_bitmap(int iblockno) {
+  int dblock;
+  if (iblockno > 0) {
+    bitmap[iblockno] = 1;
+    // read all ints at block ip->iblocks[i] - set bitmap
+    for (int pos = 0; pos < BLOCK_SZ; pos += sizeof(int)) {
+      dblock = read_int(iblockno * BLOCK_SZ + pos);
+      if (dblock > 0) {
+        bitmap[dblock] = 1;
+      } else {
+        break;
+      }
+    }
+  }
+}
+
 void traverse_inode(int inode_byte_pos) {
   struct inode *ip = (struct inode *)malloc(INODE_SZ);
 
@@ -236,18 +252,47 @@ void traverse_inode(int inode_byte_pos) {
   ip->i3block = read_int(inode_byte_pos);
 
   for (int i = 0; i < N_DBLOCKS; ++i) {
-    bitmap[ip->dblocks[i]] = 1;
-  }
-  for (int i = 0; i < N_IBLOCKS; ++i) {
-    bitmap[ip->iblocks[i]] = 1;
-    // read all ints at block ip->iblocks[i] - set bitmap
-    for (int pos = 0; pos < BLOCK_SZ; pos += sizeof(int)) {
-      bitmap[read_int(ip->iblocks[i] * BLOCK_SZ + pos)] = 1;
+    if (ip->dblocks[i] > 0) {
+      bitmap[ip->dblocks[i]] = 1;
+    } else {
+      break;
     }
   }
 
-  // same for i2 and i3 blocks
+  for (int i = 0; i < N_IBLOCKS; ++i) {
+    set_iblock_bitmap(ip->iblocks[i]);
+  }
 
+  int iblockno;
+  if (ip->i2block > 0) {
+    for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
+      iblockno = read_int(ip->i2block * BLOCK_SZ + ipos);
+      if (iblockno > 0) {
+        set_iblock_bitmap(iblockno);
+      } else {
+        break;
+      }
+    }
+  }
+
+  int i2blockno;
+  if (ip->i3block > 0) {
+    for (int i2pos = 0; i2pos < BLOCK_SZ; i2pos += sizeof(int)) {
+      i2blockno = read_int(ip->i3block * BLOCK_SZ + i2pos);
+      if (i2blockno > 0) {
+        for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
+          iblockno = read_int(i2blockno * BLOCK_SZ + ipos);
+          if (iblockno > 0) {
+            set_iblock_bitmap(iblockno);
+          } else {
+            break;
+          }
+        }
+      } else {
+        break;
+      }
+    }
+  }
 }
 
 void construct_image_from_file(const char *image_filename) {
