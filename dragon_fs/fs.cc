@@ -201,22 +201,47 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
 }
 
 void set_iblock_bitmap(int iblockno) {
-  int dblock;
-  if (iblockno > 0) {
-    bitmap[iblockno] = 1;
-    // read all ints at block ip->iblocks[i] - set bitmap
-    for (int pos = 0; pos < BLOCK_SZ; pos += sizeof(int)) {
-      dblock = read_int(iblockno * BLOCK_SZ + pos);
-      if (dblock > 0) {
-        bitmap[dblock] = 1;
-      } else {
-        break;
-      }
+  bitmap[iblockno - INODE_BLOCKS] = 1;
+  int dblockno;
+  for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
+    dblockno = read_int(iblockno * BLOCK_SZ + ipos);
+    if (dblockno > 0) {
+      bitmap[dblockno] = 1;
+    } else {
+      break;
+    }
+  }
+}
+
+void set_i2block_bitmap(int i2blockno) {
+  bitmap[i2blockno - INODE_BLOCKS] = 1;
+  int iblockno;
+  for (int i2pos = 0; i2pos < BLOCK_SZ; i2pos += sizeof(int)) {
+    iblockno = read_int(i2blockno * BLOCK_SZ + i2pos);
+    if (iblockno > 0) {
+      set_iblock_bitmap(iblockno);
+    } else {
+      break;
+    }
+  }
+}
+
+void set_i3block_bitmap(int i3blockno) {
+  printf("\n\ni3blockno:\n%d\n\n\n", i3blockno);
+  bitmap[i3blockno - INODE_BLOCKS] = 1;
+  int i2blockno;
+  for (int i3pos = 0; i3pos < BLOCK_SZ; i3pos += sizeof(int)) {
+    i2blockno = read_int(i3blockno * BLOCK_SZ + i3pos);
+    if (i2blockno > 0) {
+      set_i2block_bitmap(i2blockno);
+    } else {
+      break;
     }
   }
 }
 
 void traverse_inode(int inode_byte_pos) {
+
   struct inode *ip = (struct inode *)malloc(INODE_SZ);
 
   ip->mode = read_int(inode_byte_pos);
@@ -251,48 +276,34 @@ void traverse_inode(int inode_byte_pos) {
 
   ip->i3block = read_int(inode_byte_pos);
 
+  // set dblocks
   for (int i = 0; i < N_DBLOCKS; ++i) {
     if (ip->dblocks[i] > 0) {
-      bitmap[ip->dblocks[i]] = 1;
+      bitmap[ip->dblocks[i] - INODE_BLOCKS] = 1;
     } else {
       break;
     }
   }
 
+  // set iblocks
   for (int i = 0; i < N_IBLOCKS; ++i) {
-    set_iblock_bitmap(ip->iblocks[i]);
+    if (ip->iblocks[i] > 0) {
+      set_iblock_bitmap(ip->iblocks[i]);
+    } else {
+      break;
+    }
   }
 
-  int iblockno;
+  // set i2block
   if (ip->i2block > 0) {
-    for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
-      iblockno = read_int(ip->i2block * BLOCK_SZ + ipos);
-      if (iblockno > 0) {
-        set_iblock_bitmap(iblockno);
-      } else {
-        break;
-      }
-    }
+    set_i2block_bitmap(ip->i2block);
   }
 
-  int i2blockno;
+  // set i3block
   if (ip->i3block > 0) {
-    for (int i2pos = 0; i2pos < BLOCK_SZ; i2pos += sizeof(int)) {
-      i2blockno = read_int(ip->i3block * BLOCK_SZ + i2pos);
-      if (i2blockno > 0) {
-        for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
-          iblockno = read_int(i2blockno * BLOCK_SZ + ipos);
-          if (iblockno > 0) {
-            set_iblock_bitmap(iblockno);
-          } else {
-            break;
-          }
-        }
-      } else {
-        break;
-      }
-    }
+    set_i3block_bitmap(ip->i3block);
   }
+
 }
 
 void construct_image_from_file(const char *image_filename) {
