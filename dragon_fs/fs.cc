@@ -34,6 +34,11 @@ int get_free_data_block()
   return next_data_block;
 }
 
+int read_int(int pos) {
+  int *ptr = (int *)&rawdata[pos];
+  return *ptr;
+}
+
 int write_char(int pos, char val)
 {
   char *ptr = (char*)&rawdata[pos];
@@ -45,6 +50,7 @@ int write_int(int pos, int val)
 {
   int *ptr = (int *)&rawdata[pos];
   *ptr = val;
+  printf("val = %d -> written at position %d: %d\n", val, pos, rawdata[pos]);
   return sizeof(int);
 }
 
@@ -134,6 +140,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
 
   fptr = fopen(inputfilename, "rb");
   if (!fptr) {
+    free(ip);
     perror(inputfilename);
     exit(-1);
   }
@@ -143,10 +150,12 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   for (i = 0; i < N_DBLOCKS; ++i) {
     dblockno = get_free_data_block();
     ip->dblocks[i] = dblockno;
+    printf("dblock %d allocates blockno %d\n", i, dblockno);
     inode_byte_pos += write_int(inode_byte_pos, dblockno);
     if (write_dblock(fptr, buf, file_bytes_written, dblockno)) {
       ip->size = file_bytes_written;  // total number of data bytes written for file
       printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
+      free(ip);
       return;
     }
   }
@@ -160,6 +169,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
     if (write_iblock(fptr, buf, file_bytes_written, iblockno)) {
       ip->size = file_bytes_written;  // total number of data bytes written for file
       printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
+      free(ip);
       return;
     }
   }
@@ -171,6 +181,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   if (write_i2block(fptr, buf, file_bytes_written, i2blockno)) {
     ip->size = file_bytes_written;  // total number of data bytes written for file
     printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
+    free(ip);
     return;
   }
 
@@ -181,24 +192,96 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   if (write_i3block(fptr, buf, file_bytes_written, i3blockno)) {
     ip->size = file_bytes_written;  // total number of data bytes written for file
     printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
+    free(ip);
     return;
   }
 
+  free(ip);
   printf("failed to write all of file %s\n", inputfilename);
+}
+
+void traverse_inode(int inode_byte_pos) {
+  struct inode *ip = (struct inode *)malloc(INODE_SZ);
+
+  ip->mode = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->nlink = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->uid = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->gid = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->size = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->ctime = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->mtime = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+  ip->atime = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+
+  for (int i = 0; i < N_DBLOCKS; ++i) {
+    ip->dblocks[i] = read_int(inode_byte_pos);
+    inode_byte_pos += sizeof(int);
+  }
+
+  for (int i = 0; i < N_IBLOCKS; ++i) {
+    ip->iblocks[i] = read_int(inode_byte_pos);
+    inode_byte_pos += sizeof(int);
+  }
+
+  ip->i2block = read_int(inode_byte_pos);
+  inode_byte_pos += sizeof(int);
+
+  ip->i3block = read_int(inode_byte_pos);
+
+  for (int i = 0; i < N_DBLOCKS; ++i) {
+    bitmap[ip->dblocks[i]] = 1;
+  }
+  for (int i = 0; i < N_IBLOCKS; ++i) {
+    bitmap[ip->iblocks[i]] = 1;
+    // read all ints at block ip->iblocks[i] - set bitmap
+    for (int pos = 0; pos < BLOCK_SZ; pos += sizeof(int)) {
+      bitmap[read_int(ip->iblocks[i] * BLOCK_SZ + pos)] = 1;
+    }
+  }
+
+  // same for i2 and i3 blocks
+
+}
+
+void construct_image_from_file(const char *image_filename) {
+  FILE *fptr_image = fopen(image_filename, "rb");
+  if (!fptr_image) {
+    perror(image_filename);
+    exit(-1);
+  }
+  fread(rawdata, TOTAL_BLOCKS * BLOCK_SZ, 1, fptr_image);
+  fclose(fptr_image);
+
+  int byte_pos;
+  for (int block = 0; block < INODE_BLOCKS; ++block) {
+    for (int pos = 0; pos < BLOCK_SZ / INODE_SZ; ++pos) {
+      byte_pos = block * BLOCK_SZ + pos * INODE_SZ;
+      if (rawdata[byte_pos]) {
+        traverse_inode(byte_pos);
+      }
+    }
+  }
 }
 
 int main(int argc, char **argv) // add argument handling
 {
-  if (strcmp(argv[1], "-create") == 0) {
+  if (strcmp(argv[1], "-create") == 0 || strcmp(argv[1], "-insert") == 0) {
     if (argc != 18) {
-      perror("INVALID COMMAND\nusage: disk_image -create -image IMAGE_FILE -nblocks N -iblocks M -inputfile FILE -u UID -g GID -block D -inodepos I\n");
+      perror("INVALID COMMAND\nusage: disk_image -create/-insert -image IMAGE_FILE -nblocks N -iblocks M -inputfile FILE -u UID -g GID -block D -inodepos I\n");
       exit(-1);
     }
     int N, M, D, I, UID, GID;
-    const char *inputfilename, *outputfilename;
+    const char *inputfilename, *image_filename;
     for (int i = 2; i < 17; ++i) {
       if (strcmp(argv[i], "-image") == 0) {
-        outputfilename = argv[i+1];
+        image_filename = argv[i+1];
       } else if (strcmp(argv[i], "-nblocks") == 0) {
         N = atoi(argv[i+1]);
       } else if (strcmp(argv[i], "-iblocks") == 0) {
@@ -227,17 +310,22 @@ int main(int argc, char **argv) // add argument handling
     DATA_BLOCKS = N - M;
     TOTAL_BLOCKS = N;
     next_data_block = M;
-    rawdata = (char*)malloc(TOTAL_BLOCKS * BLOCK_SZ * sizeof(char));
-    for (int i = 0; i < TOTAL_BLOCKS * BLOCK_SZ; ++i) {
-      rawdata[i] = 0;
+    
+    rawdata = (char*)calloc(1, (TOTAL_BLOCKS+1) * BLOCK_SZ * sizeof(char));
+    bitmap = (char*)calloc(1, (DATA_BLOCKS+1) * sizeof(char));
+    if (strcmp(argv[1], "-insert") == 0) {
+      construct_image_from_file(image_filename);
     }
-    bitmap = (char*)malloc(DATA_BLOCKS * sizeof(char));
-    for (int i = 0; i < N; ++i) {
-      bitmap[i] = 0;
-    }
-    place_file(rawdata, bitmap, inputfilename, UID, GID, D, I);
 
-    FILE *outfile = fopen(outputfilename, "wb");
+    place_file(rawdata, bitmap, inputfilename, UID, GID, D, I);
+    printf("RRR\n");
+    for (int i = 0; i < INODE_SZ; i += 4) {
+      // printf("%d\n", i);
+      printf("%hhx, ", rawdata[i]);
+    }
+    // cout.flush();
+
+    FILE *outfile = fopen(image_filename, "wb");
     if (!outfile) {
       perror("outfile open");
       exit(-1);
@@ -252,6 +340,8 @@ int main(int argc, char **argv) // add argument handling
       perror("outfile close");
       exit(-1);
     }
+    free(rawdata);
+    free(bitmap);
     printf("Done.\n");
     exit(0);
   }
