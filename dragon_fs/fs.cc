@@ -31,7 +31,7 @@ int get_free_data_block()
   }
   bitmap[next_data_block] = 1;
   ++data_blocks_in_use;
-  return next_data_block;
+  return next_data_block + INODE_BLOCKS;
 }
 
 int read_int(int pos) {
@@ -50,7 +50,11 @@ int write_int(int pos, int val)
 {
   int *ptr = (int *)&rawdata[pos];
   *ptr = val;
-  printf("val = %d -> written at position %d: %d\n", val, pos, rawdata[pos]);
+
+  //P
+  // printf("val = %d -> written at position %d: %d\n", val, pos, rawdata[pos]);
+  //P
+
   return sizeof(int);
 }
 
@@ -64,7 +68,6 @@ bool write_dblock(FILE *fptr, char *buf, int &file_bytes_written, int dblockno) 
   }
   return cur_bytes < BLOCK_SZ; // true if we are now at EOF
 }
-
 
 bool write_iblock(FILE *fptr, char *buf, int &file_bytes_written, int iblockno) {
   int iblock_pos = iblockno * BLOCK_SZ;
@@ -130,7 +133,8 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   ip->uid = uid;
   inode_byte_pos += write_int(inode_byte_pos, ip->uid);
   ip->gid = gid;
-  inode_byte_pos += write_int(inode_byte_pos, ip->gid);
+  inode_byte_pos += write_int(inode_byte_pos, ip->gid) + sizeof(int);
+  int size_byte_pos = inode_byte_pos - sizeof(int);
   ip->ctime = 1;
   inode_byte_pos += write_int(inode_byte_pos, ip->ctime);
   ip->mtime = 2;
@@ -150,10 +154,15 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   for (i = 0; i < N_DBLOCKS; ++i) {
     dblockno = get_free_data_block();
     ip->dblocks[i] = dblockno;
-    printf("dblock %d allocates blockno %d\n", i, dblockno);
+
+    //P
+    // printf("dblock %d allocates blockno %d\n", i, dblockno);
+    //P
+
     inode_byte_pos += write_int(inode_byte_pos, dblockno);
     if (write_dblock(fptr, buf, file_bytes_written, dblockno)) {
       ip->size = file_bytes_written;  // total number of data bytes written for file
+      write_int(size_byte_pos, ip->size);
       printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
       free(ip);
       return;
@@ -168,6 +177,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
     inode_byte_pos += write_int(inode_byte_pos, iblockno);
     if (write_iblock(fptr, buf, file_bytes_written, iblockno)) {
       ip->size = file_bytes_written;  // total number of data bytes written for file
+      write_int(size_byte_pos, ip->size);
       printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
       free(ip);
       return;
@@ -180,6 +190,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   inode_byte_pos += write_int(inode_byte_pos, i2blockno);
   if (write_i2block(fptr, buf, file_bytes_written, i2blockno)) {
     ip->size = file_bytes_written;  // total number of data bytes written for file
+    write_int(size_byte_pos, ip->size);
     printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
     free(ip);
     return;
@@ -191,6 +202,7 @@ void place_file(char *rawdata, char *bitmap, const char *inputfilename, int uid,
   inode_byte_pos += write_int(inode_byte_pos, i3blockno);
   if (write_i3block(fptr, buf, file_bytes_written, i3blockno)) {
     ip->size = file_bytes_written;  // total number of data bytes written for file
+    write_int(size_byte_pos, ip->size);
     printf("successfully wrote %d bytes of file %s\n", file_bytes_written, inputfilename);
     free(ip);
     return;
@@ -206,7 +218,13 @@ void set_iblock_bitmap(int iblockno) {
   for (int ipos = 0; ipos < BLOCK_SZ; ipos += sizeof(int)) {
     dblockno = read_int(iblockno * BLOCK_SZ + ipos);
     if (dblockno > 0) {
-      bitmap[dblockno] = 1;
+
+      //P
+      // printf("iblockno: %d, ipos: %d\n", iblockno, ipos);
+      // printf("\n\ndblockno:\n%d\n\n\n", dblockno);
+      //P
+      
+      bitmap[dblockno - INODE_BLOCKS] = 1;
     } else {
       break;
     }
@@ -227,7 +245,11 @@ void set_i2block_bitmap(int i2blockno) {
 }
 
 void set_i3block_bitmap(int i3blockno) {
+
+  //P
   printf("\n\ni3blockno:\n%d\n\n\n", i3blockno);
+  //P
+
   bitmap[i3blockno - INODE_BLOCKS] = 1;
   int i2blockno;
   for (int i3pos = 0; i3pos < BLOCK_SZ; i3pos += sizeof(int)) {
@@ -304,6 +326,8 @@ void traverse_inode(int inode_byte_pos) {
     set_i3block_bitmap(ip->i3block);
   }
 
+  free(ip);
+
 }
 
 void construct_image_from_file(const char *image_filename) {
@@ -312,8 +336,19 @@ void construct_image_from_file(const char *image_filename) {
     perror(image_filename);
     exit(-1);
   }
-  fread(rawdata, TOTAL_BLOCKS * BLOCK_SZ, 1, fptr_image);
+
+  fread(rawdata, sizeof(char), TOTAL_BLOCKS * BLOCK_SZ, fptr_image);
   fclose(fptr_image);
+
+  //P
+  printf("BEFORE\n");
+  for (int i = 0; i < INODE_SZ; i += sizeof(int)) {
+    // printf("%d\n", i);
+    printf("%d, ", rawdata[i]);
+  }
+  printf("END BEFORE\n");
+  // exit(0);
+  //P
 
   int byte_pos;
   for (int block = 0; block < INODE_BLOCKS; ++block) {
@@ -324,6 +359,17 @@ void construct_image_from_file(const char *image_filename) {
       }
     }
   }
+
+  //P
+  printf("\nBITMAP TAKEN SPACES:\n");
+  for (int i = INODE_BLOCKS; i < INODE_BLOCKS + 50; ++i) {
+    if (bitmap[i]) {
+      printf("%d\n", i);
+    }
+  }
+  exit(0);
+  //P
+
 }
 
 int main(int argc, char **argv) // add argument handling
@@ -374,12 +420,18 @@ int main(int argc, char **argv) // add argument handling
     }
 
     place_file(rawdata, bitmap, inputfilename, UID, GID, D, I);
+
+    //P
     printf("RRR\n");
-    for (int i = 0; i < INODE_SZ; i += 4) {
+    for (int i = 0; i < INODE_SZ*2; i += sizeof(int)) {
       // printf("%d\n", i);
-      printf("%hhx, ", rawdata[i]);
+      if (i % INODE_SZ == 0) {
+        printf("\n");
+      }
+      printf("%d, ", rawdata[i]);
+
     }
-    // cout.flush();
+    //P
 
     FILE *outfile = fopen(image_filename, "wb");
     if (!outfile) {
