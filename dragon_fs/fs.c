@@ -16,7 +16,7 @@ const uint INODE_SZ = sizeof(struct inode);
 const uint INODES_PER_BLOCK = BLOCK_SZ / INODE_SZ;
 const uint INT_SZ = sizeof(int);
 const uint CHAR_SZ = sizeof(char);
-uint next_data_block = 0;
+uint next_data_block;
 uint data_blocks_in_use = 0;
 uint file_bytes_written = 0;
 
@@ -29,29 +29,29 @@ uint get_free_data_block()
     exit(-1);
   }
   while (bitmap[next_data_block]) {
-    if (next_data_block < DATA_BLOCKS - 1) {
+    if (next_data_block < TOTAL_BLOCKS - 1) {
       ++next_data_block;
     } else {
-      next_data_block = 0;
+      next_data_block = INODE_BLOCKS;
     }
   }
   bitmap[next_data_block] = 1;
   ++data_blocks_in_use;
-  return INODE_BLOCKS + next_data_block;
+  return next_data_block;
 }
 
 // takes an absolute blockno and sets the bitmap
-void set_bitmap(uint absolute_blockno) {
-  if (absolute_blockno < INODE_BLOCKS || INODE_BLOCKS + absolute_blockno >= DATA_BLOCKS) {
+uint DATA_SECTION = 1;
+void set_bitmap(uint blockno, uint section) {
+  if (blockno >= TOTAL_BLOCKS || (section == DATA_SECTION && blockno < INODE_BLOCKS)) {
     perror("\nERROR:\n attempt to set bitmap for invalid data block #:\n");
-    printf("%d\n", absolute_blockno);
+    printf("%d\n", blockno);
     exit(-1);
   }
-  uint datablockno = absolute_blockno - INODE_BLOCKS;
-  if (bitmap[datablockno]) {
+  if (bitmap[blockno]) {
     perror("\nERROR:\n attempt to set bitmap for occupied block\n");
   }
-  bitmap[datablockno] = 1;
+  bitmap[blockno] = 1;
   ++data_blocks_in_use;
 }
 
@@ -238,8 +238,8 @@ void place_file(const char *input_filename, uint uid, uint gid, uint inode_block
 }
 
 
-void read_iblock(uint iblockno) {
-  set_bitmap(iblockno);
+void read_iblock(uint iblockno, uint section) {
+  set_bitmap(iblockno, section);
   uint iblock_byte_pos = iblockno * BLOCK_SZ;
   uint dblockno, ioffset;
   for (ioffset = 0; ioffset < BLOCK_SZ; ioffset += INT_SZ) {
@@ -251,36 +251,36 @@ void read_iblock(uint iblockno) {
       // printf("\n\ndblockno:\n%d\n\n\n", dblockno);
       //P
       
-      set_bitmap(dblockno);
+      set_bitmap(dblockno, section);
     }
   }
 }
 
-void read_i2block(uint i2blockno) {
-  set_bitmap(i2blockno);
+void read_i2block(uint i2blockno, uint section) {
+  set_bitmap(i2blockno, section);
   uint i2block_byte_pos = i2blockno * BLOCK_SZ;
   uint iblockno, i2offset;
   for (i2offset = 0; i2offset < BLOCK_SZ; i2offset += INT_SZ) {
     iblockno = read_uint(i2block_byte_pos + i2offset);
     if (iblockno > 0) {
-      read_iblock(iblockno);
+      read_iblock(iblockno, section);
     }
   }
 }
 
-void read_i3block(uint i3blockno) {
+void read_i3block(uint i3blockno, uint section) {
 
   //P
   printf("\n\ni3blockno:\n%d\n\n\n", i3blockno);
   //P
 
-  set_bitmap(i3blockno);
+  set_bitmap(i3blockno, section);
   uint i3block_byte_pos = i3blockno * BLOCK_SZ;
   uint i2blockno, i3offset;
   for (i3offset = 0; i3offset < BLOCK_SZ; i3offset += INT_SZ) {
     i2blockno = read_uint(i3block_byte_pos + i3offset);
     if (i2blockno > 0) {
-      read_i2block(i2blockno);
+      read_i2block(i2blockno, section);
     }
   }
 }
@@ -329,36 +329,40 @@ struct inode *get_inode(uint inode_byte_pos) {
   return ip;
 }
 
-void traverse_inode(uint inode_byte_pos) {
+void traverse_inode(uint inode_byte_pos, uint section) {
 
   struct inode *ip = get_inode(inode_byte_pos);
   if (!ip) {
     return;
+  }
+  int blockno = inode_byte_pos / BLOCK_SZ;
+  if (!bitmap[blockno]) {
+    set_bitmap(blockno, 0);
   }
 
   uint i; 
   // set dblocks
   for (i = 0; i < N_DBLOCKS; ++i) {
     if (ip->dblocks[i] > 0) {
-      set_bitmap(ip->dblocks[i]);
+      set_bitmap(ip->dblocks[i], section);
     }
   }
 
   // set iblocks
   for (i = 0; i < N_IBLOCKS; ++i) {
     if (ip->iblocks[i] > 0) {
-      read_iblock(ip->iblocks[i]);
+      read_iblock(ip->iblocks[i], section);
     }
   }
 
   // set i2block
   if (ip->i2block > 0) {
-    read_i2block(ip->i2block);
+    read_i2block(ip->i2block, section);
   }
 
   // set i3block
   if (ip->i3block > 0) {
-    read_i3block(ip->i3block);
+    read_i3block(ip->i3block, section);
   }
 
   free(ip);
@@ -401,7 +405,7 @@ void construct_image_from_file(const char *image_filename, uint known_inode_bloc
     block_byte_pos = block * BLOCK_SZ;
     for (inode_idx = 0; inode_idx < INODES_PER_BLOCK; ++inode_idx) {
       inode_byte_pos = block_byte_pos + inode_idx * INODE_SZ;
-      traverse_inode(inode_byte_pos);
+      traverse_inode(inode_byte_pos, 1);
     }
   }
 
@@ -435,14 +439,33 @@ void extract_files(uint UID, uint GID, const char *output_path) {
       struct inode *ip = get_inode(inode_byte_pos);
       if (ip && ip->nlink > 0 && ip->size > 0 && ip->uid == UID && ip->gid == GID) {
         fprintf(outfile, "file found at inode in block %d, file size %d\n", block, ip->size);
+        traverse_inode(inode_byte_pos, 0); // to set bitmap
       }
       if (ip) {
         free(ip);
       }
     }
   }
-
   fclose(outfile);
+
+  char output_files_free[80];
+  strcpy(output_files_free, output_path);
+  strcat(output_files_free, "/UNUSED_BLOCKS");
+  FILE *outfile2 = fopen(output_files_free, "w");
+  if (!outfile2) {
+    perror("\nERROR:\n outfile2 open\n");
+    exit(-1);
+  }
+
+  uint b;
+  for (b = 0; b < TOTAL_BLOCKS; ++b) {
+    if (!bitmap[b]) {
+      fprintf(outfile2, "%d\n", b);
+    }
+  }
+
+  fclose(outfile2);
+
 }
 
 int main(int argc, char **argv) // add argument handling
@@ -485,11 +508,12 @@ int main(int argc, char **argv) // add argument handling
     TOTAL_BLOCKS = N;
     INODE_BLOCKS = M;
     DATA_BLOCKS = N - M;
+    next_data_block = M;
 
     printf("\nTB:%d\n", TOTAL_BLOCKS);
     
     rawdata = (char*)calloc((TOTAL_BLOCKS+1) * BLOCK_SZ, CHAR_SZ);
-    bitmap = (char*)calloc(DATA_BLOCKS+1, CHAR_SZ);
+    bitmap = (char*)calloc(TOTAL_BLOCKS+1, CHAR_SZ);
     if (!rawdata || !bitmap) {
       perror("\nERROR:\n memory allocation failed\n");
     }
