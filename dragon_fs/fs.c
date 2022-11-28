@@ -269,8 +269,8 @@ void read_iblock(uint iblockno, struct inode *ip) {
   for (ioffset = 0; ioffset < BLOCK_SZ && ip->size > 0; ioffset += UINT_SZ) {
     dblockno = read_uint(iblock_byte_pos + ioffset);
     //P
-    printf("iblockno: %u, ipos: %u\n", iblockno, ioffset);
-    printf("\n\ndblockno:\n%u\n\n\n", dblockno);
+    // printf("iblockno: %u, ipos: %u\n", iblockno, ioffset);
+    // printf("\n\ndblockno:\n%u\n\n\n", dblockno);
     //P
     
     set_bitmap(dblockno, DATA_BLOCK);
@@ -288,7 +288,7 @@ void read_iblock(uint iblockno, struct inode *ip) {
 void read_i2block(uint i2blockno, struct inode *ip) {
 
   //P
-  printf("\n\ni3blockno:\n%u\n\n\n", i2blockno);
+  // printf("\n\ni2blockno:\n%u\n\n\n", i2blockno);
   //P
 
   set_bitmap(i2blockno, INODE_BLOCK);
@@ -303,7 +303,7 @@ void read_i2block(uint i2blockno, struct inode *ip) {
 void read_i3block(uint i3blockno, struct inode *ip) {
 
   //P
-  printf("\n\ni3blockno:\n%u\n\n\n", i3blockno);
+  // printf("\n\ni3blockno:\n%u\n\n\n", i3blockno);
   //P
 
   set_bitmap(i3blockno, INODE_BLOCK);
