@@ -74,11 +74,6 @@ uint write_char(uint pos, char val)
 {
   char *ptr = (char*)&rawdata[pos];
   *ptr = val;
-
-  //P
-  // printf("\nCHAR val = %c -> written at position %u: %c\n", val, pos, rawdata[pos]);
-  //P
-
   return CHAR_SZ;
 }
 
@@ -86,24 +81,11 @@ uint write_uint(uint pos, uint val)
 {
   uint *ptr = (uint*)&rawdata[pos];
   *ptr = val;
-
-  //P
-  // printf("\nuint val = %u -> written at position %u: %u\n", val, pos, rawdata[pos]);
-  //P
-
   return UINT_SZ;
 }
 
 void write_extracted_data(uint blockno, struct inode *ip) {
-  // if (blockno >= TOTAL_BLOCKS) {
-  //   printf("\nBLOCK ERR\n");
-  //   return;
-  // }
   uint byte_pos = blockno * BLOCK_SZ;
-  // uint block_end = byte_pos + BLOCK_SZ;
-  // for (; byte_pos < block_end; ++byte_pos) {
-  //   fprintf(extracted_fptr, "%c", read_char(byte_pos));
-  // }
   uint to_write = ip->size < BLOCK_SZ ? ip->size : BLOCK_SZ;
   fwrite(&rawdata[byte_pos], to_write, 1, extracted_fptr);
 }
@@ -203,11 +185,6 @@ void place_file(const char *input_filename, uint uid, uint gid, uint inode_block
   for (i = 0; i < N_DBLOCKS; ++i) {
     dblockno = get_free_data_block();
     ip->dblocks[i] = dblockno;
-
-    //P
-    // printf("dblock %u allocates blockno %u\n", i, dblockno);
-    //P
-
     inode_byte_pos += write_uint(inode_byte_pos, dblockno);
     if (write_dblock(fptr, buf, dblockno)) {
       ip->size = file_bytes_written;  // total number of data bytes written for file
@@ -267,12 +244,7 @@ void read_iblock(uint iblockno, struct inode *ip) {
   uint iblock_byte_pos = iblockno * BLOCK_SZ;
   uint dblockno, ioffset;
   for (ioffset = 0; ioffset < BLOCK_SZ && ip->size > 0; ioffset += UINT_SZ) {
-    dblockno = read_uint(iblock_byte_pos + ioffset);
-    //P
-    // printf("iblockno: %u, ipos: %u\n", iblockno, ioffset);
-    // printf("\n\ndblockno:\n%u\n\n\n", dblockno);
-    //P
-    
+    dblockno = read_uint(iblock_byte_pos + ioffset);    
     set_bitmap(dblockno, DATA_BLOCK);
     if (extracted_fptr) {
       write_extracted_data(dblockno, ip);
@@ -286,11 +258,6 @@ void read_iblock(uint iblockno, struct inode *ip) {
 }
 
 void read_i2block(uint i2blockno, struct inode *ip) {
-
-  //P
-  // printf("\n\ni2blockno:\n%u\n\n\n", i2blockno);
-  //P
-
   set_bitmap(i2blockno, INODE_BLOCK);
   uint i2block_byte_pos = i2blockno * BLOCK_SZ;
   uint iblockno, i2offset;
@@ -301,11 +268,6 @@ void read_i2block(uint i2blockno, struct inode *ip) {
 }
 
 void read_i3block(uint i3blockno, struct inode *ip) {
-
-  //P
-  // printf("\n\ni3blockno:\n%u\n\n\n", i3blockno);
-  //P
-
   set_bitmap(i3blockno, INODE_BLOCK);
   uint i3block_byte_pos = i3blockno * BLOCK_SZ;
   uint i2blockno, i3offset;
@@ -408,29 +370,12 @@ void construct_image_from_file(const char *image_filename, uint known_inode_bloc
     exit(-1);
   }
 
-  uint r = fread(rawdata, CHAR_SZ, TOTAL_BLOCKS * BLOCK_SZ, image_fptr);
+  fread(rawdata, CHAR_SZ, TOTAL_BLOCKS * BLOCK_SZ, image_fptr);
   fclose(image_fptr);
-  if (r < TOTAL_BLOCKS * BLOCK_SZ) {
-  //   printf("\nWARNING:\n input image size (%u) less than size specified by parameters (%u)\n", r, TOTAL_BLOCKS * BLOCK_SZ);
-  };
 
   if (!known_inode_blocks) {
     return;
   }
-  
-  //P
-  printf("\nEXISTING IMAGE BEFORE INSERTION:\n");
-  uint i;
-  for (i = 0; i < INODE_SZ*2; i += UINT_SZ) {
-    // printf("%u\n", i);
-    if (i % INODE_SZ == 0) {
-      printf("\n");
-    }
-    printf("%u, ", read_uint(i));
-  }
-  printf("\n--------------\n");
-  // exit(0);
-  //P
 
   uint block_byte_pos, inode_byte_pos, block, inode_idx;
   for (block = 0; block < INODE_BLOCKS; ++block) {
@@ -444,17 +389,6 @@ void construct_image_from_file(const char *image_filename, uint known_inode_bloc
       }
     }
   }
-
-  //P
-  // printf("\nBITMAP TAKEN SPACES:\n");
-  // for (i = INODE_BLOCKS; i < INODE_BLOCKS + 50; ++i) {
-  //   if (bitmap[i]) {
-  //     printf("%u\n", i);
-  //   }
-  // }
-  // exit(0);
-  //P
-
 }
 
 void extract_files(uint UID, uint GID, const char *output_path) {
@@ -467,9 +401,10 @@ void extract_files(uint UID, uint GID, const char *output_path) {
     exit(-1);
   }
 
-  char extracted_filename[100];
-  strcpy(extracted_filename, output_path);
-  strcat(extracted_filename, "/extracted");
+  // UNCOMMENT FOR FILE EXTRACTION
+  // char extracted_filename[100];
+  // strcpy(extracted_filename, output_path);
+  // strcat(extracted_filename, "/extracted");
 
   uint block_byte_pos, inode_byte_pos, block, inode_idx;
   for (block = 0; block < TOTAL_BLOCKS; ++block) {
@@ -477,25 +412,26 @@ void extract_files(uint UID, uint GID, const char *output_path) {
     for (inode_idx = 0; inode_idx < INODES_PER_BLOCK; ++inode_idx) {
       inode_byte_pos = block_byte_pos + inode_idx * INODE_SZ;
       struct inode *ip = get_inode(inode_byte_pos);
-      if (!ip) {
-        continue;
-      }
       if (ip && ip->nlink > 0 && ip->size > 0 && ip->uid == UID && ip->gid == GID) {
         fprintf(outfile, "file found at inode in block %u, file size %u\n", block, ip->size);
-        // if (ip->size != 7306130) {
-        //   continue;
+
+        // UNCOMMENT FOR FILE EXTRACTION
+        // extracted_fptr = fopen(extracted_filename, "wb"); // create a new file for each found file to reconstruct
+        // if (!extracted_fptr) {
+        //   free(ip);
+        //   perror("\nERROR:\n while opening extraction file destination\n");
+        //   exit(-1);
         // }
-        extracted_fptr = fopen(extracted_filename, "wb"); // create a new file for each found file to reconstruct
-        if (!extracted_fptr) {
-          free(ip);
-          perror("\nERROR:\n while opening extraction file destination\n");
-          exit(-1);
-        }
+
         traverse_inode(inode_byte_pos, ip); // to set bitmap
-        fclose(extracted_fptr);
-        strcat(extracted_filename, "_X");
+
+        // UNCOMMENT FOR FILE EXTRACTION
+        // fclose(extracted_fptr);
+        // strcat(extracted_filename, "_X");
       }
-      free(ip);
+      if (ip) {
+        free(ip);
+      }
     }
   }
   fclose(outfile);
@@ -572,18 +508,6 @@ int main(int argc, char **argv) // add argument handling
     }
 
     place_file(input_filename, UID, GID, D, I);
-
-    //P
-    printf("FIRST INODE BLOCK AFTER FILE PLACED:\n");
-    for (i = 0; i < INODE_SZ*INODES_PER_BLOCK; i += UINT_SZ) {
-      // printf("%u\n", i);
-      if (i % INODE_SZ == 0) {
-        printf("\n");
-      }
-      printf("%u, ", read_uint(i));
-
-    }
-    //P
 
     FILE *outfile = fopen(image_filename, "wb");
     if (!outfile) {
