@@ -563,7 +563,11 @@ int main(int argc, char **argv) // add argument handling
     rewind(image_fptr);
     fclose(image_fptr);
 
-    TOTAL_BLOCKS = file_size / BLOCK_SZ + 1;
+    TOTAL_BLOCKS = file_size / BLOCK_SZ;
+    
+    if (file_size % BLOCK_SZ != 0) {
+      ++TOTAL_BLOCKS;
+    }
 
     rawdata = (char*)calloc((TOTAL_BLOCKS+1) * BLOCK_SZ, CHAR_SZ);
     bitmap = (char*)calloc(TOTAL_BLOCKS+1, CHAR_SZ);
